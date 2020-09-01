@@ -163,9 +163,6 @@ void main()
 	open_i2c(0x50);	//Initialize the I2C port. Currently default setting is 100kHz clock rate
 
 	/*Quick example of pre-programmed grip control (i.e. separate control mode from torque, velocity and position control)*/
-	//set_mode(DISABLE_PRESSURE_FILTER);	//uncomment for RAW pressure
-	//set_mode(DISABLE_TORQUE_VELOCITY_SAFETY);	//uncomment for UNSAFE torque and velocity control modes
-
 	/*Setpoint generation start time*/
 	struct timeval tv;
 
@@ -185,7 +182,7 @@ void main()
 	float_format_i2c i2c_out;
 	float_format_i2c i2c_in;
 	for(float ts = current_time_sec(&tv) + .5; current_time_sec(&tv) < ts;)
-		send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);	//initialize position
+		send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);	//initialize position and enter API
 	for(int ch = 0; ch < NUM_CHANNELS; ch++)
 	{
 		i2c_out.v[ch] = 0;
@@ -209,8 +206,8 @@ void main()
 	close_grip(10.f, &tv, &i2c_in, &i2c_out, &disabled_stat, &pres_fmt);
 	printf("squeezing...\r\n");
 	squeeze_grip(5.f, &tv,&i2c_in,&i2c_out, &disabled_stat, &pres_fmt);
-	printf("done!\r\n");
-	while(1)
+	printf("done!\r\n");	
+	for(float end_ts = current_time_sec(&tv)+3.f; current_time_sec(&tv)<end_ts;)
 	{
 		for(int ch = 0; ch < NUM_CHANNELS-1; ch++)
 			printf("q[%d]=%f, ",ch, i2c_in.v[ch]);
@@ -221,5 +218,5 @@ void main()
 		if(rc != 0)
 			printf("I2C error code %d\r\n",rc);		
 	}
-
+	open_grip(10.f, &tv, &i2c_in, &i2c_out, &disabled_stat, &pres_fmt);
 }
