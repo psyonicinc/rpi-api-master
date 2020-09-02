@@ -1,4 +1,5 @@
 #include "i2c-master-test.h"
+#include <stdio.h>
 
 const float half_pi = M_PI/2;
 const float pi = M_PI;
@@ -25,8 +26,13 @@ INPUTS:
 	period: amount of time to try opening. does not effect grip velocity
 OUTPUTS:
 */
-void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat)
+void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
+	for(int i =0; i < 3; i++)
+	{
+		set_mode(DISABLE_PRESSURE_FILTER);
+		usleep(1000);
+	}
 	pres_union_fmt_i2c pres_fmt;
 	float_format_i2c i2c_in;
 	float_format_i2c i2c_out;
@@ -51,7 +57,7 @@ void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat)
 		{
 			if(ch == THUMB_ROTATOR)
 			{
-				qd[ch] = -80.f;
+				qd[ch] = -60.f;
 				i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]), 40.f);	
 			}
 			else
@@ -62,6 +68,10 @@ void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat)
 		}
 		int rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
 		//print_disabled_stat(disabled_stat);
+		for(int i =0; i< 19; i++)
+			fprintf(fp, "%d,", pres_fmt.v[i]);
+		fprintf(fp, "%d\n", pres_fmt.v[19]);
+
 		if(rc != 0)
 			printf("I2C error code %d\r\n",rc);
 		if(*disabled_stat & 0x1F != 0)
@@ -74,7 +84,7 @@ void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat)
 	INPUTS:
 		period: grip close attempt time. does not effect grip velocity.
 */
-void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat)
+void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
 	pres_union_fmt_i2c pres_fmt;
 	float_format_i2c i2c_in;
@@ -100,7 +110,7 @@ void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat)
 			float t = current_time_sec(tv) - cur_state_start_ts;
 			if(ch == THUMB_ROTATOR)
 			{
-				qd[ch] = -80.f;
+				qd[ch] = -60.f;
 				i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]), 40.f);	
 			}
 			else
@@ -111,6 +121,10 @@ void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat)
 		}
 		int rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
 		//print_disabled_stat(disabled_stat);
+		for(int i =0; i< 19; i++)
+			fprintf(fp, "%d,", pres_fmt.v[i]);
+		fprintf(fp, "%d\n", pres_fmt.v[19]);
+
 		if(rc != 0)
 			printf("I2C error code %d\r\n",rc);
 		if(*disabled_stat & 0x1F != 0)
@@ -127,7 +141,7 @@ HELPER/PASS BY REFERENCE:
 	tv: construct for time
 	disabled_stat: status of the driver, for reference after completion of grip
 */
-void squeeze_grip(float period, float squeeze_torque, struct timeval * tv, uint8_t * disabled_stat)
+void squeeze_grip(float period, float squeeze_torque, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
 	pres_union_fmt_i2c pres_fmt;
 	float_format_i2c i2c_in;
@@ -157,12 +171,16 @@ void squeeze_grip(float period, float squeeze_torque, struct timeval * tv, uint8
 		for(int ch = 0; ch < NUM_CHANNELS; ch++)
 		{
 			if(ch == THUMB_ROTATOR)
-				i2c_out.v[ch] = sat_f(2.f*(-80.f-i2c_in.v[ch]),40.f);
+				i2c_out.v[ch] = sat_f(2.f*(-60.f-i2c_in.v[ch]),40.f);
 			else
 				i2c_out.v[ch] = tau_des;
 		}		
 		int rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
 		//print_disabled_stat(disabled_stat);
+		for(int i =0; i< 19; i++)
+			fprintf(fp, "%d,", pres_fmt.v[i]);
+		fprintf(fp, "%d\n", pres_fmt.v[19]);
+
 		if(rc != 0)
 			printf("I2C error code %d\r\n",rc);
 		usleep(10);
@@ -177,8 +195,9 @@ void main()
 
 	open_i2c(0x50);	//Initialize the I2C port. Currently default setting is 100kHz clock rate
 
+	FILE * fp = fopen("datalog.csv", "w+");
 	struct timeval tv;
-
+	
 	uint8_t disabled_stat = 0;	
 	pres_union_fmt_i2c pres_fmt;
 	float_format_i2c i2c_out;
@@ -189,12 +208,12 @@ void main()
 		i2c_out.v[ch] = 0;
 	
 	printf("opening...\r\n");
-	open_grip(10.f, &tv, &disabled_stat);
-	open_grip(10.f, &tv, &disabled_stat);
+	open_grip(10.f, &tv, &disabled_stat, fp);
+	open_grip(10.f, &tv, &disabled_stat, fp);
 	printf("closing...\r\n");
-	close_grip(10.f, &tv, &disabled_stat);
+	close_grip(10.f, &tv, &disabled_stat, fp);
 	printf("squeezing...\r\n");
-	squeeze_grip(5.f, 20.f, &tv,&disabled_stat);
+	squeeze_grip(5.f, 20.f, &tv,&disabled_stat, fp);
 	printf("done!\r\n");	
 	for(float end_ts = current_time_sec(&tv)+3.f; current_time_sec(&tv)<end_ts;)
 	{
@@ -207,5 +226,7 @@ void main()
 		if(rc != 0)
 			printf("I2C error code %d\r\n",rc);		
 	}
-	open_grip(10.f, &tv,&disabled_stat);
+	open_grip(10.f, &tv,&disabled_stat, fp);
+	
+	fclose(fp);
 }
