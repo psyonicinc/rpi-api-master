@@ -39,6 +39,8 @@ void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE 
 	float q_state_start[NUM_CHANNELS];
 	float qd[NUM_CHANNELS];
 	//uint8_t disabled_stat=0;
+	set_mode(TORQUE_CTL_MODE);
+	usleep(10000);
 	for(int ch = 0; ch < NUM_CHANNELS; ch ++)
 		i2c_out.v[ch] = 0.f;
 	for(float end_ts = current_time_sec(tv) + .1; current_time_sec(tv) < end_ts;)
@@ -91,6 +93,8 @@ void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE
 	float_format_i2c i2c_out;
 	float q_state_start[NUM_CHANNELS];
 	float qd[NUM_CHANNELS];
+	set_mode(TORQUE_CTL_MODE);
+	usleep(10000);
 	for(int ch = 0; ch < NUM_CHANNELS; ch ++)
 		i2c_out.v[ch] = 0.f;
 	for(float end_ts = current_time_sec(tv) + .1; current_time_sec(tv) < end_ts;)
@@ -148,6 +152,8 @@ void squeeze_grip(float period, float squeeze_torque, struct timeval * tv, uint8
 	float_format_i2c i2c_out;
 	float q_state_start[NUM_CHANNELS];
 	float qd[NUM_CHANNELS];
+	set_mode(TORQUE_CTL_MODE);
+	usleep(10000);
 	for(int ch = 0; ch < NUM_CHANNELS; ch ++)
 		i2c_out.v[ch] = 0.f;
 	for(float end_ts = current_time_sec(tv) + .05; current_time_sec(tv) < end_ts;)
