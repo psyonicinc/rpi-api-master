@@ -1,6 +1,6 @@
 #include "i2c-master-test.h"
 
-static int file_i2c;
+int file_i2c;
 uint8_t i2c_tx_buf[I2C_TX_SIZE] = {0};
 uint8_t i2c_rx_buf[I2C_Q_RX_SIZE+I2C_PS_TX_SIZE+I2C_SAFETY_STAT_SIZE] = {0};
 

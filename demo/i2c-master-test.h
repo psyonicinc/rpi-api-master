@@ -82,6 +82,8 @@ typedef enum {
 	OPEN_CHUCK_OK_GRASP_CMD
 }grasp_cmd;
 
+extern int file_i2c;
+
 int open_i2c(uint8_t addr);
 int set_grip(grasp_cmd grip_idx, uint8_t speed);
 int set_mode(uint8_t mode);
