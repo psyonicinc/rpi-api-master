@@ -103,11 +103,11 @@ void main()
 			int chk = (disabled_stat >> ch) & 1;
 			if(chk)
 			{
-				i2c_out.v[ch] = 35.f;
+				i2c_out.v[ch] = 35.f;	//OPTIONAL no-movement action to take when the finger has reported its status as 'hot'
 				printf("[%s hot]", finger_name[ch]);
 			}
 			else
-				i2c_out.v[ch] = qd;	//if you're not hot, move the finger
+				i2c_out.v[ch] = qd;	//if you're not hot, move the finger.
 		}
 		printf("\r\n");
 		rc = send_recieve_floats(POS_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
