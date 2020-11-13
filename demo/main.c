@@ -1,4 +1,6 @@
 #include "i2c-master-test.h"
+#include "i2c-err-lookup.h"
+
 
 #define PRINT_PRESSURE	/*When enabled, prints the value of the pressure sensors on the index finger. */
 //#define PRINT_POSITION	/*When enabled, prints the finger position in degrees/*
@@ -92,58 +94,60 @@ void main()
 	float start_ts = current_time_sec(&tv);
 	while(1)
 	{
-		float t = current_time_sec(&tv)-start_ts;
-		for(int ch = 0; ch < NUM_CHANNELS; ch++)
+		if(rc == 0)
 		{
-			float qd = 50.f*(.5f*sin(3*t+(float)(5-ch)*3.1415f/6)+.5f) + 10.f;
-			if(ch == THUMB_ROTATOR)
-				qd = -qd;
-			
-			/*Create a cooldown handler rule (stop the finger if it has triggered the 'hot' flag*/
-			int chk = (disabled_stat >> ch) & 1;
-			if(chk)
-			{
-				i2c_out.v[ch] = 35.f;	//OPTIONAL no-movement action to take when the finger has reported its status as 'hot'
-				printf("[%s hot]", finger_name[ch]);
-			}
-			else
-				i2c_out.v[ch] = qd;	//if you're not hot, move the finger.
-		}
-		printf("\r\n");
-		rc = send_recieve_floats(POS_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
-		
-		/*
-		Pressure Indices:
-		Index: 	0-3
-		Middle: 4-7
-		Ring: 	8-11
-		Pinky: 	12-15
-		Thumb: 	16-19
-
-		Note that the The pressure range is NOT normalized (i.e. will range from 0-0xFFFF).
-		*/
-		#ifdef PRINT_PRESSURE
-			int finger_idx = PINKY;
-			uint8_t pb_idx = 4*finger_idx;
-			if(pb_idx > 16)
-				pb_idx = 16;
-			int pidx = 0;
-			for(pidx = 0; pidx < 3; pidx++)
-				printf("%.3f, ",(float)pres_fmt.v[pb_idx+pidx]/6553.5f);
-			printf("%.3f\r\n",(float)pres_fmt.v[pb_idx+pidx]/6553.5f);
-			
-		#elif defined PRINT_POSITION	//Print the position
-			int ch;
-			for(ch = 0; ch < NUM_CHANNELS-1; ch++)
-				printf("q[%d] = %f, ",ch,i2c_in.v[ch]);
-			printf("q[%d] = %f\r\n",ch,i2c_in.v[ch]);
-		#else
-			const char * yn[2] = {"on ","off"};
+			float t = current_time_sec(&tv)-start_ts;
 			for(int ch = 0; ch < NUM_CHANNELS; ch++)
-				printf("%s: %s ", finger_name[ch], yn[((disabled_stat >> ch) & 1)] );
-			printf("\r\n");			
-		#endif
-		if(rc != 0)
-			printf("I2C error code %d\r\n",rc);
+			{
+				float qd = 50.f*(.5f*sin(3*t+(float)(5-ch)*3.1415f/6)+.5f) + 10.f;
+				if(ch == THUMB_ROTATOR)
+					qd = -qd;
+				
+				/*Create a cooldown handler rule (stop the finger if it has triggered the 'hot' flag*/
+				int chk = (disabled_stat >> ch) & 1;
+				if(chk)
+				{
+					i2c_out.v[ch] = 35.f;	//OPTIONAL no-movement action to take when the finger has reported its status as 'hot'
+					printf("[%s hot]", finger_name[ch]);
+				}
+				else
+					i2c_out.v[ch] = qd;	//if you're not hot, move the finger.
+			}
+			
+			/*
+			Pressure Indices:
+			Index: 	0-3
+			Middle: 4-7
+			Ring: 	8-11
+			Pinky: 	12-15
+			Thumb: 	16-19
+
+			Note that the The pressure range is NOT normalized (i.e. will range from 0-0xFFFF).
+			*/
+			#ifdef PRINT_PRESSURE
+				int finger_idx = PINKY;
+				uint8_t pb_idx = 4*finger_idx;
+				if(pb_idx > 16)
+					pb_idx = 16;
+				int pidx = 0;
+				for(pidx = 0; pidx < 3; pidx++)
+					printf("%.3f, ",(float)pres_fmt.v[pb_idx+pidx]/6553.5f);
+				printf("%.3f\r\n",(float)pres_fmt.v[pb_idx+pidx]/6553.5f);
+				
+			#elif defined PRINT_POSITION	//Print the position
+				int ch;
+				for(ch = 0; ch < NUM_CHANNELS-1; ch++)
+					printf("q[%d] = %f, ",ch,i2c_in.v[ch]);
+				printf("q[%d] = %f\r\n",ch,i2c_in.v[ch]);
+			#else
+				const char * yn[2] = {"on ","off"};
+				for(int ch = 0; ch < NUM_CHANNELS; ch++)
+					printf("%s: %s ", finger_name[ch], yn[((disabled_stat >> ch) & 1)] );
+				printf("\r\n");			
+			#endif
+		}
+		rc = send_recieve_floats(POS_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
+		print_hr_errcode(rc);
+
 	}
 }
