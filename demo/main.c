@@ -23,8 +23,7 @@ const char * finger_name[] = {
 void wait_for_cooldown(uint8_t * disabled_stat, float_format_i2c * out, float_format_i2c * in, pres_union_fmt_i2c * pres)
 {
 	for(int ch = 0; ch < NUM_CHANNELS; ch++)
-		out->v[ch] = in->v[ch];
-
+		out->v[ch] = 0.f;
 	while(*disabled_stat != 0)
 	{
 		for(int ch = 0; ch < NUM_CHANNELS; ch++)
@@ -34,7 +33,7 @@ void wait_for_cooldown(uint8_t * disabled_stat, float_format_i2c * out, float_fo
 				printf("[%s cooling]", finger_name[ch]);
 		}
 		printf("\r\n");
-		int rc = send_recieve_floats(POS_CTL_MODE, out, in, disabled_stat, pres);
+		int rc = send_recieve_floats(VELOCITY_CTL_MODE, out, in, disabled_stat, pres);
 	}
 }
 
@@ -42,14 +41,6 @@ void main()
 {
 
 	open_i2c(0x50);	//Initialize the I2C port. Currently default setting is 100kHz clock rate
-
-	/*Quick example of pre-programmed grip control (i.e. separate control mode from torque, velocity and position control)*/
-	set_grip(GENERAL_OPEN_CMD,100);
-	usleep(2000000);
-	set_grip(CHUCK_OK_GRASP_CMD,100);
-	usleep(2000000);
-	set_grip(GENERAL_OPEN_CMD,100);
-	usleep(2000000);
 
 	/*Setpoint generation start time*/
 	struct timeval tv;
@@ -70,11 +61,11 @@ void main()
 		i2c_out.v[ch] = 45.f;
 	i2c_out.v[THUMB_ROTATOR] = -45.f;
 	
-	set_mode(POS_CTL_MODE);
+	set_mode(VELOCITY_CTL_MODE);
 	printf("prepping api...\r\n");
 	while(rc != 0)
 	{
-		rc = send_recieve_floats(POS_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
+		rc = send_recieve_floats(VELOCITY_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
 		if(rc != 0)
 			printf("waiting...\r\n");
 	}
@@ -84,12 +75,13 @@ void main()
 		printf("pressure filter disabled\r\n");
 	else
 		printf("comm failure, filter not disabled\r\n");
-	usleep(3000000);	//delay for printf visibility
 	printf("waiting for motor cooldown\r\n");
 	wait_for_cooldown(&disabled_stat, &i2c_out, &i2c_in, &pres_fmt);
 	printf("ready\r\n");
 	
 	float start_ts = current_time_sec(&tv);
+	float tstart = 0;
+	float tend = 0;
 	while(1)
 	{
 		float t = current_time_sec(&tv)-start_ts;
@@ -103,14 +95,14 @@ void main()
 			int chk = (disabled_stat >> ch) & 1;
 			if(chk)
 			{
-				i2c_out.v[ch] = 35.f;	//OPTIONAL no-movement action to take when the finger has reported its status as 'hot'
+				i2c_out.v[ch] = 0.f;	//OPTIONAL no-movement action to take when the finger has reported its status as 'hot'
 				printf("[%s hot]", finger_name[ch]);
 			}
 			else
-				i2c_out.v[ch] = qd;	//if you're not hot, move the finger.
+				i2c_out.v[ch] = 3.f*(qd-i2c_in.v[ch]);	//if you're not hot, move the finger.
 		}
 		printf("\r\n");
-		rc = send_recieve_floats(POS_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
+		rc = send_recieve_floats(VELOCITY_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
 		
 		/*
 		Pressure Indices:
