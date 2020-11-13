@@ -1,6 +1,10 @@
 #include "i2c-master-test.h"
 #include <stdio.h>
 
+/*
+Super simple demo program that prints the 8 byte hand tx
+of the standard i2c protocol.
+*/
 
 void main()
 {
