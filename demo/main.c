@@ -22,17 +22,19 @@ const char * finger_name[] = {
 /**/
 void wait_for_cooldown(uint8_t * disabled_stat, float_format_i2c * out, float_format_i2c * in, pres_union_fmt_i2c * pres)
 {
+	for(int ch = 0; ch < NUM_CHANNELS; ch++)
+		out->v[ch] = in->v[ch];
+
 	while(*disabled_stat != 0)
 	{
 		for(int ch = 0; ch < NUM_CHANNELS; ch++)
 		{
-			out->v[ch] = 0.f;
 			int chk = (*disabled_stat >> ch) & 1;
 			if(chk)
 				printf("[%s cooling]", finger_name[ch]);
 		}
 		printf("\r\n");
-		int rc = send_recieve_floats(TORQUE_CTL_MODE, out, in, disabled_stat, pres);
+		int rc = send_recieve_floats(POS_CTL_MODE, out, in, disabled_stat, pres);
 	}
 }
 
@@ -60,16 +62,19 @@ void main()
 	float qd[NUM_CHANNELS];
 	pres_union_fmt_i2c pres_fmt;
 	float_format_i2c i2c_out;
-	for(int ch = 0; ch < NUM_CHANNELS; ch++)
-		i2c_out.v[ch] = 0;
 	float_format_i2c i2c_in;
 	int rc=7;
+
+	/*Arbitrary neutral pos init load*/
+	for(int ch = 0; ch < NUM_CHANNELS; ch++)
+		i2c_out.v[ch] = 45.f;
+	i2c_out.v[THUMB_ROTATOR] = -45.f;
 	
-	set_mode(TORQUE_CTL_MODE);
+	set_mode(POS_CTL_MODE);
 	printf("prepping api...\r\n");
 	while(rc != 0)
 	{
-		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
+		rc = send_recieve_floats(POS_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
 		if(rc != 0)
 			printf("waiting...\r\n");
 	}
@@ -85,7 +90,6 @@ void main()
 	printf("ready\r\n");
 	
 	float start_ts = current_time_sec(&tv);
-	float tau_thresh[NUM_CHANNELS] = {0};
 	while(1)
 	{
 		float t = current_time_sec(&tv)-start_ts;
@@ -99,23 +103,15 @@ void main()
 			int chk = (disabled_stat >> ch) & 1;
 			if(chk)
 			{
-				tau_thresh[ch] = 0.f;
+				i2c_out.v[ch] = 35.f;
 				printf("[%s hot]", finger_name[ch]);
 			}
 			else
-				tau_thresh[ch] = 90.f;
-			
-			/*Perform torque based position control*/
-			float tau = 1.f*(qd-i2c_in.v[ch]);
-			if(tau > tau_thresh[ch])
-				tau = tau_thresh[ch];
-			else if(tau < -tau_thresh[ch])
-				tau = -tau_thresh[ch];
-			i2c_out.v[ch] = tau;
+				i2c_out.v[ch] = qd;	//if you're not hot, move the finger
 		}
 		printf("\r\n");
-		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
-		wait_for_cooldown(&disabled_stat, &i2c_out, &i2c_in, &pres_fmt);
+		rc = send_recieve_floats(POS_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
+		
 		/*
 		Pressure Indices:
 		Index: 	0-3
