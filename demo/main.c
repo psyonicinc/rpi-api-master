@@ -45,7 +45,7 @@ void enter_api_mode(uint8_t mode)
 	float_format_i2c i2c_out = {0};	//this is unsafe for position mode. kludge-y 
 	uint8_t disabled_stat=0;
 	int rc = 7;
-	while(rc != 0)
+	while(rc != 0)	//potentially make this non-blocking...
 	{
 		rc = send_recieve_floats(mode, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
 		if(rc != 0)
@@ -82,9 +82,10 @@ OUTPUTS:
 */
 void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
-	printf("entering torque ctl\r\n");
+	printf("opening hand\r\n...");
+	printf("entering torque ctl...\r\n");
 	enter_api_mode(TORQUE_CTL_MODE);
-	printf("disabling pres filter\r\n");
+	printf("disabling pres filter...\r\n");
 	if(set_mode(DISABLE_PRESSURE_FILTER) == 0)
 		printf("filter off\r\n");
 	else
@@ -134,20 +135,7 @@ void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE 
 
 		}
 		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
-				
-		if(rc == 0)
-		{
-			for(int i =0; i< 20; i++)
-				fprintf(fp, "%d,", pres_fmt.v[i]);
-			for(int ch = 0; ch < NUM_CHANNELS; ch++)
-				fprintf(fp, "%f, ", qd[ch]);		
-			for(int ch = 0; ch < NUM_CHANNELS; ch++)
-				fprintf(fp, "%f, ", i2c_out.v[ch]);
-			for(int ch = 0; ch < 5; ch++)
-				fprintf(fp, "%f, ", i2c_in.v[ch]);
-			fprintf(fp, "%f\n", i2c_in.v[5]);
-		}	
-
+		
 		print_hr_errcode(rc);
 		
 		if(*disabled_stat & 0x1F != 0)
@@ -162,6 +150,7 @@ void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE 
 */
 void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
+	printf("Closing Hand\r\rn");
 	printf("entering torque ctl\r\n");
 	enter_api_mode(TORQUE_CTL_MODE);
 
@@ -206,20 +195,22 @@ void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE
 			if(is_dis)
 				i2c_out.v[ch] = 0.f;
 		}
-		//if(current_time_sec(tv) >= cost_update_ts)
-		//{
-			for(int ch = 0; ch < NUM_CHANNELS; ch++)
-			{
-				float tau = i2c_out.v[ch];
-				if(tau < 0.f)
-					tau = -tau;
-				e_cost[ch] += tau*.005f;
-				if(e_cost[ch] > 8.1f)
-					sat_tau[ch] = 0.f;
-			}
-			//cost_update_ts = current_time_sec(tv) + .005f;	//5ms
-			printf("ec[IDX]=%f\r\n",e_cost[INDEX]);
-		//}
+
+		uint8_t all_dis = 1;
+		for(int ch = 0; ch < NUM_CHANNELS; ch++)
+		{
+			float tau = i2c_out.v[ch];
+			if(tau < 0.f)
+				tau = -tau;
+			e_cost[ch] += tau*.005f;
+			if(e_cost[ch] > 3.1f)
+				sat_tau[ch] = 0.f;
+			else
+				all_dis = 0;
+		}
+		if(all_dis)
+			break;
+		printf("ec[IDX]=%f\r\n",e_cost[INDEX]);
 		
 		int rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
 		
@@ -255,9 +246,8 @@ HELPER/PASS BY REFERENCE:
 	tv: construct for time
 	disabled_stat: status of the driver, for reference after completion of grip
 */
-void squeeze_grip(float period, float num_squeezes, float squeeze_torque, float squeeze_amp, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
+void squeeze_grip(float period, float squeeze_torque, float squeeze_amp, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
-	printf("entering torque ctl\r\n");
 	enter_api_mode(TORQUE_CTL_MODE);
 	
 	pres_union_fmt_i2c pres_fmt;
@@ -287,7 +277,10 @@ void squeeze_grip(float period, float num_squeezes, float squeeze_torque, float 
 	for(float end_ts = current_time_sec(tv) + period; current_time_sec(tv) < end_ts;)
 	{
 		float t = current_time_sec(tv)-cur_state_start_ts;
-		float q_des_base = sin(2*pi*(num_squeezes/period)*t) * squeeze_amp;	//0-20-0 sinusoid over the full range of this for loop interval
+		float offset_ratio = .6f;	//this factor adjusts how much the squeeze setpoint dips negative. the amount in degrees is equal to -squeeze_amp+squeeze_amp*offset_ratio*(1/(1+offset_ratio))
+		const float two_pi = 2*pi;	
+		/*comes in by squeeze amp, but opens less than squeeze amp. dips negative wrt. the starting position when squeeze is entered*/
+		float q_des_base = (sin(two_pi*(1.f/period)*t + offset_ratio*two_pi) * squeeze_amp + offset_ratio*squeeze_amp)*(1.f/(1.f+offset_ratio));	
 		
 		for(int ch = 0; ch < NUM_CHANNELS; ch++)
 		{
@@ -297,9 +290,9 @@ void squeeze_grip(float period, float num_squeezes, float squeeze_torque, float 
 			else
 				i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]),squeeze_torque);	//i2c_out.v[ch] = tau_des;
 			
-			int is_dis = (*disabled_stat >> ch) & 1;
-			if(is_dis)
-				i2c_out.v[ch] = 0.f;
+			// int is_dis = (*disabled_stat >> ch) & 1;
+			// if(is_dis)
+				// i2c_out.v[ch] = 0.f;
 		}
 		int rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
 		//print_disabled_stat(disabled_stat);
@@ -315,8 +308,8 @@ void squeeze_grip(float period, float num_squeezes, float squeeze_torque, float 
 				fprintf(fp, "%f, ", i2c_in.v[ch]);
 			fprintf(fp, "%f\n", i2c_in.v[5]);
 		}
-		else
-			print_hr_errcode(rc);
+
+		print_hr_errcode(rc);
 		usleep(10);
 	}	
 }
@@ -340,15 +333,19 @@ void main()
 		i2c_out.v[ch] = 0;
 	
 	printf("opening...\r\n");
-	open_grip(10.f, &tv, &disabled_stat, fp);
-	open_grip(10.f, &tv, &disabled_stat, fp);
+	open_grip(3.f, &tv, &disabled_stat, fp);
+	open_grip(3.f, &tv, &disabled_stat, fp);
 	printf("closing...\r\n");
-	close_grip(10.f, &tv, &disabled_stat, fp);
+	close_grip(2.f, &tv, &disabled_stat, fp);
 	printf("squeezing...\r\n");
-	squeeze_grip(24.f, 2.75f, 40.f, 35.f, &tv,&disabled_stat, fp);
+	for(int i = 0; i < 3; i++)
+	{
+		printf("squeezing %d...\r\n",i);
+		squeeze_grip(24.f, 40.f, 20.f, &tv,&disabled_stat, fp);
+	}
 	printf("done!\r\n");	
 	printf("opening...\r\n");
-	open_grip(10.f, &tv,&disabled_stat, fp);
+	open_grip(3.f, &tv,&disabled_stat, fp);
 	
 	fclose(fp);
 }
