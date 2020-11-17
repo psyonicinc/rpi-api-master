@@ -91,34 +91,28 @@ OUTPUTS:
 */
 void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
-	printf("opening hand\r\n...");
-	printf("entering torque ctl...\r\n");
-	enter_api_mode(TORQUE_CTL_MODE);
-	printf("disabling pres filter...\r\n");
-	if(set_mode(DISABLE_PRESSURE_FILTER) == 0)
-		printf("filter off\r\n");
-	else
-		printf("err: filter not disabled\r\n");
-	
 	pres_union_fmt_i2c pres_fmt;
 	float_format_i2c i2c_in;
 	float_format_i2c i2c_out;
 	float q_state_start[NUM_CHANNELS];
 	float qd[NUM_CHANNELS];
-	
+	int rc = 0;
 	for(int ch = 0; ch < NUM_CHANNELS; ch ++)
 		i2c_out.v[ch] = 0.f;
 	for(float end_ts = current_time_sec(tv) + .1; current_time_sec(tv) < end_ts;)
-		send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
+	{
+		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
+		if(rc==0)
+			thumb_rotator_position = i2c_in.v[THUMB_ROTATOR];
+	}
 	for(int ch = 0; ch < NUM_CHANNELS; ch++)
 	{
 		q_state_start[ch] = i2c_in.v[ch];
 		qd[ch] = q_state_start[ch];
 	}
-	//thumb_rotator_position = i2c_in.v[THUMB_ROTATOR];
-	thumb_rotator_position = -90.f;
+	
+	
 	float cur_state_start_ts = current_time_sec(tv);
-	int rc = 0;
 	for(float end_ts = current_time_sec(tv) + period; current_time_sec(tv) < end_ts;)
 	{
 		
@@ -143,6 +137,11 @@ void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE 
 			}
 
 		}
+		else
+		{
+			for(int ch = 0; ch < NUM_CHANNELS; ch++)
+				i2c_out.v[ch] = 0.f;	//if your last packet threw and error code, try and stop movement until you recover
+		}
 		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
 		
 		print_hr_errcode(rc);
@@ -161,20 +160,24 @@ void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE 
 */
 void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
-	printf("Closing Hand\r\rn");
-	printf("entering torque ctl\r\n");
-	enter_api_mode(TORQUE_CTL_MODE);
-
 	pres_union_fmt_i2c pres_fmt;
 	float_format_i2c i2c_in;
 	float_format_i2c i2c_out;
 	float q_state_start[NUM_CHANNELS];
 	float qd[NUM_CHANNELS];
-
+	int rc=0;
+	
 	for(int ch = 0; ch < NUM_CHANNELS; ch ++)
 		i2c_out.v[ch] = 0.f;
 	for(float end_ts = current_time_sec(tv) + .1; current_time_sec(tv) < end_ts;)
+	{
 		send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
+		if(rc == 0)
+			thumb_rotator_position = i2c_in.v[THUMB_ROTATOR];
+	}
+	if(rc != 0)
+		thumb_rotator_position = -60.f;
+	
 	for(int ch = 0; ch < NUM_CHANNELS; ch++)
 	{
 		q_state_start[ch] = i2c_in.v[ch];
@@ -185,27 +188,36 @@ void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE
 	float e_cost[NUM_CHANNELS] = {0,0,0,0,0,0};
 	float cost_update_ts=0.f;
 	float sat_tau[NUM_CHANNELS] = {40.f, 40.f, 40.f, 40.f, 40.f, 40.f};
-	thumb_rotator_position = i2c_in.v[THUMB_ROTATOR];
+	
+	
 	for(float end_ts = current_time_sec(tv) + period; current_time_sec(tv) < end_ts;)
 	{
-		
-		for(int ch = 0; ch < NUM_CHANNELS; ch++)
+		if(rc == 0)
 		{
-			float t = current_time_sec(tv) - cur_state_start_ts;
-			if(ch == THUMB_ROTATOR)
+			for(int ch = 0; ch < NUM_CHANNELS; ch++)
 			{
-				qd[ch] = thumb_rotator_position;
-				i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]), sat_tau[ch]);	
+				float t = current_time_sec(tv) - cur_state_start_ts;
+				if(ch == THUMB_ROTATOR)
+				{
+					qd[ch] = thumb_rotator_position;
+					i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]), sat_tau[ch]);	
+				}
+				else
+				{
+					qd[ch] = fspeed[ch]*(t) + q_state_start[ch];
+					i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]), sat_tau[ch]);								
+				}
+				int is_dis = (*disabled_stat >> ch) & 1;
+				if(is_dis)
+					i2c_out.v[ch] = 0.f;
 			}
-			else
-			{
-				qd[ch] = fspeed[ch]*(t) + q_state_start[ch];
-				i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]), sat_tau[ch]);								
-			}
-			int is_dis = (*disabled_stat >> ch) & 1;
-			if(is_dis)
-				i2c_out.v[ch] = 0.f;
 		}
+		else
+		{
+			for(int ch = 0; ch < NUM_CHANNELS; ch++)
+				i2c_out.v[ch] = 0.f;	//if your last packet threw and error code, try and stop movement until you recover
+		}
+
 
 		uint8_t all_dis = 1;
 		for(int ch = 0; ch < NUM_CHANNELS; ch++)
@@ -223,7 +235,7 @@ void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE
 			break;
 		printf("ec[IDX]=%f\r\n",e_cost[INDEX]);
 		
-		int rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
+		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
 		
 		if(rc == 0)
 		{
@@ -268,11 +280,21 @@ void squeeze_grip(float period, float squeeze_torque, float squeeze_amp, struct 
 	float_format_i2c i2c_out;
 	float q_state_start[NUM_CHANNELS];
 	float qd[NUM_CHANNELS];
-	
+	int rc = 0;
+
 	for(int ch = 0; ch < NUM_CHANNELS; ch ++)
 		i2c_out.v[ch] = 0.f;
 	for(float end_ts = current_time_sec(tv) + .05; current_time_sec(tv) < end_ts;)
+	{
 		send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
+		if(rc == 0)
+		{
+			thumb_rotator_position = i2c_in.v[THUMB_ROTATOR];
+		}
+	}
+	if(rc != 0)
+		thumb_rotator_position = -30.f;
+
 	for(int ch = 0; ch < NUM_CHANNELS; ch++)
 	{
 		q_state_start[ch] = i2c_in.v[ch];
@@ -286,7 +308,6 @@ void squeeze_grip(float period, float squeeze_torque, float squeeze_amp, struct 
 	float cur_state_start_ts = current_time_sec(tv);
 	for(int ch = 0; ch < NUM_CHANNELS; ch++)
 		q_state_start[ch] = i2c_in.v[ch];
-	thumb_rotator_position = i2c_in.v[THUMB_ROTATOR];
 	for(float end_ts = current_time_sec(tv) + period; current_time_sec(tv) < end_ts;)
 	{
 		float t = current_time_sec(tv)-cur_state_start_ts;
@@ -294,16 +315,24 @@ void squeeze_grip(float period, float squeeze_torque, float squeeze_amp, struct 
 		const float two_pi = 2*pi;	
 		/*comes in by squeeze amp, but opens less than squeeze amp. dips negative wrt. the starting position when squeeze is entered*/
 		float q_des_base = (sin(two_pi*(1.f/period)*t + offset_ratio*two_pi) * squeeze_amp + offset_ratio*squeeze_amp)*(1.f/(1.f+offset_ratio));	//TODO: split this insanity into multiple lines
-		
-		for(int ch = 0; ch < NUM_CHANNELS; ch++)
+		if(rc == 0)
 		{
-			qd[ch] = q_des_base + q_state_start[ch];
-			if(ch == THUMB_ROTATOR)
-				i2c_out.v[ch] = sat_f(2.f*(thumb_rotator_position-i2c_in.v[ch]),40.f);
-			else
-				i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]),squeeze_torque);	//i2c_out.v[ch] = tau_des;			
+			for(int ch = 0; ch < NUM_CHANNELS; ch++)
+			{
+				qd[ch] = q_des_base + q_state_start[ch];
+				if(ch == THUMB_ROTATOR)
+					i2c_out.v[ch] = sat_f(2.f*(thumb_rotator_position-i2c_in.v[ch]),40.f);
+				else
+					i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]),squeeze_torque);	//i2c_out.v[ch] = tau_des;			
+			}
 		}
-		int rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
+		else
+		{
+			for(int ch = 0; ch < NUM_CHANNELS; ch++)
+				i2c_out.v[ch] = 0.f;	//if your last packet threw and error code, try and stop movement until you recover
+		}
+
+		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
 		
 		if(rc == 0)
 		{
@@ -331,7 +360,6 @@ void main()
 
 	FILE * fp = fopen("datalog.csv", "w");
 	
-	
 	uint8_t disabled_stat = 0;	
 	pres_union_fmt_i2c pres_fmt;
 	float_format_i2c i2c_out;
@@ -341,16 +369,25 @@ void main()
 	for(int ch = 0; ch < NUM_CHANNELS; ch++)
 		i2c_out.v[ch] = 0;
 	
+	printf("entering torque ctl...\r\n");
+	enter_api_mode(TORQUE_CTL_MODE);
+	printf("waiting for cooldown...\r\n");
+	wait_for_cooldown(&disabled_stat, &i2c_out, &i2c_in, &pres_fmt);
+	printf("cooldown complete\r\n");
+	printf("disabling pres filter...\r\n");
+	if(set_mode(DISABLE_PRESSURE_FILTER) == 0)
+		printf("filter off\r\n");
+	else
+		printf("err: filter not disabled\r\n");
+
 	printf("opening...\r\n");
-	open_grip(3.f, &tv, &disabled_stat, fp);
 	open_grip(3.f, &tv, &disabled_stat, fp);
 	printf("closing...\r\n");
 	close_grip(2.f, &tv, &disabled_stat, fp);
-	printf("squeezing...\r\n");
 	for(int i = 0; i < 3; i++)
 	{
 		printf("squeezing %d...\r\n",i);
-		squeeze_grip(24.f, 40.f, 20.f, &tv,&disabled_stat, fp);
+		squeeze_grip(24.f, 90.f, 17.f, &tv,&disabled_stat, fp);
 	}
 	printf("done!\r\n");	
 	printf("opening...\r\n");
