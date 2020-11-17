@@ -92,21 +92,25 @@ disp(free_air_1);
 
 load('free-air-2.mat');
 free_air_2 = get_stiffness_guess(datas(:,27:32));
+% https://youtu.be/Vx1z5_IgAmA
 disp('Free air 2:');
 disp(free_air_2);
 
 load('foam.mat');
 foam = get_stiffness_guess(datas(:,27:32));
+%https://youtu.be/-hdlyywdhCw
 disp('foam:');
 disp(foam);
 
 load('chalk-bag.mat');
 chalk_bag = get_stiffness_guess(datas(:,27:32));
+%https://youtu.be/nY8VZZTUmPA
 disp('chalk-bag:');
 disp(chalk_bag);
 
 load('glass-bottle.mat');
 glass_bottle = get_stiffness_guess(datas(:,27:32));
+%https://youtu.be/yxnaDpRh9J0
 disp('glass-bottle:');
 disp(glass_bottle);
 
