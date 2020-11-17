@@ -7,6 +7,7 @@ const float pi = M_PI;
 
 static struct timeval tv;
 
+/*Lookup table for finger array indexing*/
 static const char * finger_name[] = {
 	"index",
 	"middle",
@@ -35,6 +36,12 @@ float sat_f(float in, float thresh)
 static float thumb_rotator_position = -40.f;
 
 /*
+	This function enters the api mode specified by the input argument. If you call it 
+	with an invalid argument for mode, it will spin lock. It will also spin lock if there
+	isn't a valid hand connected when it's called. 
+	
+	This function spins until it gets an i2c packet reply from a hand with the correct length (66 bytes)
+	and a valid checksum (last byte in the packet). 
 */
 void enter_api_mode(uint8_t mode)
 {
@@ -54,6 +61,7 @@ void enter_api_mode(uint8_t mode)
 }
 
 /*
+	Spin until the hand notifies you via. the 'disabled flag' that the motors have cooled and can produce a large torque again
 */
 void wait_for_cooldown(uint8_t * disabled_stat, float_format_i2c * out, float_format_i2c * in, pres_union_fmt_i2c * pres)
 {
@@ -79,6 +87,7 @@ void wait_for_cooldown(uint8_t * disabled_stat, float_format_i2c * out, float_fo
 INPUTS:
 	period: amount of time to try opening. does not effect grip velocity
 OUTPUTS:
+	none
 */
 void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
@@ -147,6 +156,8 @@ void open_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE 
 	Closes grip with fixed velocity.
 	INPUTS:
 		period: grip close attempt time. does not effect grip velocity.
+	OUTPUTS:
+		writes to file specified by fp filepointer, in a .csv format
 */
 void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
@@ -245,10 +256,12 @@ INPUTS:
 HELPER/PASS BY REFERENCE:
 	tv: construct for time
 	disabled_stat: status of the driver, for reference after completion of grip
+OUTPUTS:
+	writes to file specified by fp filepointer, in a .csv format
 */
 void squeeze_grip(float period, float squeeze_torque, float squeeze_amp, struct timeval * tv, uint8_t * disabled_stat, FILE * fp)
 {
-	enter_api_mode(TORQUE_CTL_MODE);
+	enter_api_mode(TORQUE_CTL_MODE);	//send the 
 	
 	pres_union_fmt_i2c pres_fmt;
 	float_format_i2c i2c_in;
@@ -280,7 +293,7 @@ void squeeze_grip(float period, float squeeze_torque, float squeeze_amp, struct 
 		float offset_ratio = .6f;	//this factor adjusts how much the squeeze setpoint dips negative. the amount in degrees is equal to -squeeze_amp+squeeze_amp*offset_ratio*(1/(1+offset_ratio))
 		const float two_pi = 2*pi;	
 		/*comes in by squeeze amp, but opens less than squeeze amp. dips negative wrt. the starting position when squeeze is entered*/
-		float q_des_base = (sin(two_pi*(1.f/period)*t + offset_ratio*two_pi) * squeeze_amp + offset_ratio*squeeze_amp)*(1.f/(1.f+offset_ratio));	
+		float q_des_base = (sin(two_pi*(1.f/period)*t + offset_ratio*two_pi) * squeeze_amp + offset_ratio*squeeze_amp)*(1.f/(1.f+offset_ratio));	//TODO: split this insanity into multiple lines
 		
 		for(int ch = 0; ch < NUM_CHANNELS; ch++)
 		{
@@ -288,14 +301,10 @@ void squeeze_grip(float period, float squeeze_torque, float squeeze_amp, struct 
 			if(ch == THUMB_ROTATOR)
 				i2c_out.v[ch] = sat_f(2.f*(thumb_rotator_position-i2c_in.v[ch]),40.f);
 			else
-				i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]),squeeze_torque);	//i2c_out.v[ch] = tau_des;
-			
-			// int is_dis = (*disabled_stat >> ch) & 1;
-			// if(is_dis)
-				// i2c_out.v[ch] = 0.f;
+				i2c_out.v[ch] = sat_f(2.f*(qd[ch]-i2c_in.v[ch]),squeeze_torque);	//i2c_out.v[ch] = tau_des;			
 		}
 		int rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
-		//print_disabled_stat(disabled_stat);
+		
 		if(rc == 0)
 		{
 			for(int i =0; i< 20; i++)
