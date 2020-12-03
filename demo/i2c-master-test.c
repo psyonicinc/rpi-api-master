@@ -131,3 +131,41 @@ int send_recieve_floats(uint8_t mode, float_format_i2c * out, float_format_i2c *
 	
 	return ret;
 }
+
+int send_receieve_current_mode(uint8_t mode, float_format_i2c * out, float_format_i2c * in, uint8_t * disabled_stat, float_format_i2c * current)
+{
+	int ret = 0;
+	uint8_t checksum = 0;
+	
+	/**************Format transmission packet***************/
+	i2c_tx_buf[0] = mode; 
+	for(int i = 0; i < I2C_Q_RX_SIZE; i++)
+		i2c_tx_buf[i+1] = out->d[i];
+	i2c_tx_buf[I2C_TX_SIZE-1] = get_checksum(i2c_tx_buf, I2C_TX_SIZE-1); //deliberate break of checksum for testing purposes
+	
+	if (write(file_i2c, i2c_tx_buf, I2C_TX_SIZE) != I2C_TX_SIZE)          //write() returns the number of bytes actually written, if it doesn't match then an error occurred (e.g. no response from the device)
+		ret |= 1;
+	/***************************END*************************/
+	
+	/**************Format reception packet***************/
+	if(read(file_i2c, i2c_rx_buf, I2C_RX_BUF_SIZE) != I2C_RX_BUF_SIZE)
+		ret |= (1 << 1);
+	else
+	{
+		for(int i = 0; i < I2C_Q_RX_SIZE; i++)
+			in->d[i] = i2c_rx_buf[i];
+		for(int i = 24; i < 48; i++)	//next 24 bytes for the current measurement
+			current->d[i-I2C_Q_RX_SIZE] = i2c_rx_buf[i];
+	}
+	/***************************END*************************/
+	
+	/*Checksum, dis stat*/
+	*disabled_stat = i2c_rx_buf[64];
+	
+	checksum = get_checksum(i2c_rx_buf, 65);
+	
+	if(checksum != i2c_rx_buf[65])
+		ret |= (1 << 2);
+	
+	return ret;
+}

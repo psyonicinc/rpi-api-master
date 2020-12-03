@@ -28,6 +28,8 @@
 #define ENABLE_PRESSURE_FILTER				0xC1	//enabled by default
 #define DISABLE_TORQUE_VELOCITY_SAFETY		0xB0
 #define ENABLE_TORQUE_VELOCITY_SAFETY		0xB1	//enabled by default
+#define EN_CURRENT_FEEDBACK_MODE			0xCE
+#define DIS_CURRENT_FEEDBACK_MODE			0xCD
 #define POS_CTL_MODE						0xAD
 #define TORQUE_CTL_MODE						0xAB
 #define VELOCITY_CTL_MODE					0xAC
@@ -91,6 +93,6 @@ int open_i2c(uint8_t addr);
 int set_grip(grasp_cmd grip_idx, uint8_t speed);
 int set_mode(uint8_t mode);
 int send_recieve_floats(uint8_t mode, float_format_i2c * out, float_format_i2c * in, uint8_t * disabled_stat, pres_union_fmt_i2c * pres_fmt);
-
+int send_receieve_current_mode(uint8_t mode, float_format_i2c * out, float_format_i2c * in, uint8_t * disabled_stat, float_format_i2c * current);
 
 #endif

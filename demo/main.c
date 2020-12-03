@@ -64,6 +64,7 @@ void main()
 	for(int ch = 0; ch < NUM_CHANNELS; ch++)
 		i2c_out.v[ch] = 0;
 	float_format_i2c i2c_in;
+	float_format_i2c current_in;
 	int rc=7;
 	
 	set_mode(TORQUE_CTL_MODE);
@@ -80,13 +81,23 @@ void main()
 		printf("pressure filter disabled\r\n");
 	else
 		printf("comm failure, filter not disabled\r\n");
-	usleep(3000000);	//delay for printf visibility
 	printf("waiting for motor cooldown\r\n");
+
 	wait_for_cooldown(&disabled_stat, &i2c_out, &i2c_in, &pres_fmt);
 	printf("ready\r\n");
 	
+	for(int i = 0; i < 10; i++)
+	{
+		if(set_mode(EN_CURRENT_FEEDBACK_MODE) == 0)
+			printf("current feedback ON\r\n");
+		else
+			printf("failure to enable current feedback\r\n");
+		usleep(10000);
+	}
+
 	float start_ts = current_time_sec(&tv);
 	float tau_thresh[NUM_CHANNELS] = {0};
+	
 	while(1)
 	{
 		if(rc == 0)
@@ -118,39 +129,13 @@ void main()
 			}
 			printf("\r\n");
 			
-			/*
-			Pressure Indices:
-			Index: 	0-3
-			Middle: 4-7
-			Ring: 	8-11
-			Pinky: 	12-15
-			Thumb: 	16-19
-
-			Note that the The pressure range is NOT normalized (i.e. will range from 0-0xFFFF).
-			*/
-			#ifdef PRINT_PRESSURE
-				int finger_idx = PINKY;
-				uint8_t pb_idx = 4*finger_idx;
-				if(pb_idx > 16)
-					pb_idx = 16;
-				int pidx = 0;
-				for(pidx = 0; pidx < 3; pidx++)
-					printf("%.3f, ",(float)pres_fmt.v[pb_idx+pidx]/6553.5f);
-				printf("%.3f\r\n",(float)pres_fmt.v[pb_idx+pidx]/6553.5f);
-				
-			#elif defined PRINT_POSITION	//Print the position
-				int ch;
-				for(ch = 0; ch < NUM_CHANNELS-1; ch++)
-					printf("q[%d] = %f, ",ch,i2c_in.v[ch]);
-				printf("q[%d] = %f\r\n",ch,i2c_in.v[ch]);
-			#else
-				const char * yn[2] = {"on ","off"};
-				for(int ch = 0; ch < NUM_CHANNELS; ch++)
-					printf("%s: %s ", finger_name[ch], yn[((disabled_stat >> ch) & 1)] );
-				printf("\r\n");			
-			#endif
+			for(int ch = 0; ch < NUM_CHANNELS; ch++)
+				printf("[%.1d: %2.2f]", ch, current_in.v[ch]*10.f);
 		}
-		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
+		
+		//rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
+		rc = send_receieve_current_mode(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &current_in);
+
 		print_hr_errcode(rc);
 	}
 }
