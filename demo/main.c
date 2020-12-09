@@ -32,7 +32,10 @@ float sat_f(float in, float thresh)
 		return thresh;
 	else if (in < -thresh)
 		return -thresh;
+	else
+		return in;
 }
+
 static float thumb_rotator_position = -40.f;
 
 /*
