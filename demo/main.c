@@ -192,9 +192,11 @@ void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE
 	float cost_update_ts=0.f;
 	float sat_tau[NUM_CHANNELS] = {40.f, 40.f, 40.f, 40.f, 40.f, 40.f};
 	
-	
+	float get_ecost_ts = 0;
+	float tstart = current_time_sec(tv);
 	for(float end_ts = current_time_sec(tv) + period; current_time_sec(tv) < end_ts;)
 	{
+		float t = current_time_sec(tv)-tstart;
 		if(rc == 0)
 		{
 			for(int ch = 0; ch < NUM_CHANNELS; ch++)
@@ -220,22 +222,26 @@ void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE
 			for(int ch = 0; ch < NUM_CHANNELS; ch++)
 				i2c_out.v[ch] = 0.f;	//if your last packet threw and error code, try and stop movement until you recover
 		}
-
-
-		uint8_t all_dis = 1;
-		for(int ch = 0; ch < NUM_CHANNELS; ch++)
+		
+		if(t > get_ecost_ts)
 		{
-			float tau = i2c_out.v[ch];
-			if(tau < 0.f)
-				tau = -tau;
-			e_cost[ch] += tau*.005f;
-			if(e_cost[ch] > 3.1f)
-				sat_tau[ch] = 0.f;
-			else
-				all_dis = 0;
+			uint8_t all_dis = 1;
+			for(int ch = 0; ch < NUM_CHANNELS; ch++)
+			{
+				float tau = i2c_out.v[ch];
+				if(tau < 0.f)
+					tau = -tau;
+				e_cost[ch] += tau*.005f;
+				if(e_cost[ch] > 3.1f)
+					sat_tau[ch] = 0.f;
+				else
+					all_dis = 0;
+			}
+			if(all_dis)
+				break;
+			get_ecost_ts = t + .015f;
 		}
-		if(all_dis)
-			break;
+		
 		printf("ec[IDX]=%f\r\n",e_cost[INDEX]);
 		
 		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, disabled_stat, &pres_fmt);
@@ -260,7 +266,7 @@ void close_grip(float period, struct timeval * tv, uint8_t * disabled_stat, FILE
 		else
 			print_hr_errcode(rc);
 
-		usleep(10);
+		//usleep(10);
 	}
 }
 
@@ -360,7 +366,7 @@ void main()
 {
 
 	open_i2c(0x50);	//Initialize the I2C port. Currently default setting is 100kHz clock rate
-
+	
 	FILE * fp = fopen("datalog.csv", "w");
 	
 	uint8_t disabled_stat = 0;	
