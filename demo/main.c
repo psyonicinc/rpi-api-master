@@ -1,15 +1,13 @@
 #include "i2c-master-test.h"
 #include "i2c-err-lookup.h"
+#include "sig-catch.h"
+#include "m_time.h"
+#include "hand.h"
+
 
 #define PRINT_PRESSURE	/*When enabled, prints the value of the pressure sensors on the index finger. */
 //#define PRINT_POSITION	/*When enabled, prints the finger position in degrees/*
 
-float current_time_sec(struct timeval * tv)
-{
-	gettimeofday(tv,NULL);
-	int64_t t_int = (tv->tv_sec*1000000+tv->tv_usec);
-	return ((float)t_int)/1000000.0f;
-}
 
 const char * finger_name[] = {
 	"index",
@@ -39,22 +37,10 @@ void wait_for_cooldown(uint8_t * disabled_stat, float_format_i2c * out, float_fo
 
 void main()
 {
-
 	open_i2c(0x50);	//Initialize the I2C port. Currently default setting is 100kHz clock rate
-
-	/*Quick example of pre-programmed grip control (i.e. separate control mode from torque, velocity and position control)*/
-	set_grip(GENERAL_OPEN_CMD,100);
-	usleep(2000000);
-	set_grip(CHUCK_OK_GRASP_CMD,100);
-	usleep(2000000);
-	set_grip(GENERAL_OPEN_CMD,100);
-	usleep(2000000);
-
-	/*Setpoint generation start time*/
-	struct timeval tv;
-
-	/*All control modes will use the same float format struct for input and output. Initializing them here*/
-	
+	m_time_init();
+	signal_catch_setup();
+		
 	/*Setup for demo motion*/
 	uint8_t disabled_stat = 0xFF;
 	
@@ -84,71 +70,74 @@ void main()
 	printf("waiting for motor cooldown\r\n");
 	wait_for_cooldown(&disabled_stat, &i2c_out, &i2c_in, &pres_fmt);
 	printf("ready\r\n");
+		
 	
-	float start_ts = current_time_sec(&tv);
-	float tau_thresh[NUM_CHANNELS] = {0};
-	while(1)
+	
+	enum {OPEN, CLOSE};
+	
+	int state = 0;
+	float next_state_ts = 1.f;
+	float start_ts = current_time_sec();
+	gl_hand.smoothing_time = 1.f;
+	
+	while(gl_run_ok)
 	{
+		float t = current_time_sec() - start_ts;
+		if(t > next_state_ts)
+		{
+			int next_state = 0;
+			switch(state)
+			{
+				case OPEN:
+					gl_hand.mp[INDEX].qd_set = 50.f;
+					
+					next_state = CLOSE;
+					next_state_ts = t + 1.5f;
+					break;
+				case CLOSE:
+					gl_hand.mp[INDEX].qd_set = 15.f;
+					
+					next_state = OPEN;
+					next_state_ts = t+1.5f;
+					break;
+				default: 
+					break;
+			}
+			state = next_state;
+		}
+		
 		if(rc == 0)
 		{
-			float t = current_time_sec(&tv)-start_ts;
+			
 			for(int ch = 0; ch < NUM_CHANNELS; ch++)
 			{
-				float qd = 50.f*(.5f*sin(3*t+(float)(5-ch)*3.1415f/6)+.5f) + 10.f;
-				if(ch == THUMB_ROTATOR)
-					qd = -qd;
+				gl_hand.mp[ch].q = i2c_in.v[ch];
+								
+				smooth_qd(
+					gl_hand.mp[ch].qd_set, 
+					gl_hand.smoothing_time, 
+					gl_hand.smoothing_jump_trigger, 
+					gl_hand.mp[ch].q,
+					(smooth_mem_t *)(&(gl_hand.sm[ch])),
+					(float *)(&(gl_hand.mp[ch].qd))
+				);
 				
-				/*Create a cooldown handler rule (stop the finger if it has triggered the 'hot' flag*/
-				int chk = (disabled_stat >> ch) & 1;
-				if(chk)
-				{
-					tau_thresh[ch] = 0.f;
-					printf("[%s hot]", finger_name[ch]);
-				}
-				else
-					tau_thresh[ch] = 90.f;
+				float tau = gl_hand.mp[ch].k*(gl_hand.mp[ch].qd-gl_hand.mp[ch].q);
+				if(tau > gl_hand.motor_current_limit)
+					tau = gl_hand.motor_current_limit;
+				else if(tau < -gl_hand.motor_current_limit)
+					tau = -gl_hand.motor_current_limit;
 				
-				/*Perform torque based position control*/
-				float tau = 1.f*(qd-i2c_in.v[ch]);
-				if(tau > tau_thresh[ch])
-					tau = tau_thresh[ch];
-				else if(tau < -tau_thresh[ch])
-					tau = -tau_thresh[ch];
+				gl_hand.sp[ch].abs_err_set = abs_f(gl_hand.mp[ch].qd_set - gl_hand.mp[ch].q);
+				if(gl_hand.sp[ch].abs_err_set < gl_hand.sp[ch].setpoint_err_thresh)
+					tau = 0.f;
+
 				i2c_out.v[ch] = tau;
+						
+				//printf("[%.2f]", tau);
+				printf("[%.2f]", gl_hand.sp[ch].abs_err_set);
 			}
 			printf("\r\n");
-			
-			/*
-			Pressure Indices:
-			Index: 	0-3
-			Middle: 4-7
-			Ring: 	8-11
-			Pinky: 	12-15
-			Thumb: 	16-19
-
-			Note that the The pressure range is NOT normalized (i.e. will range from 0-0xFFFF).
-			*/
-			#ifdef PRINT_PRESSURE
-				int finger_idx = PINKY;
-				uint8_t pb_idx = 4*finger_idx;
-				if(pb_idx > 16)
-					pb_idx = 16;
-				int pidx = 0;
-				for(pidx = 0; pidx < 3; pidx++)
-					printf("%.3f, ",(float)pres_fmt.v[pb_idx+pidx]/6553.5f);
-				printf("%.3f\r\n",(float)pres_fmt.v[pb_idx+pidx]/6553.5f);
-				
-			#elif defined PRINT_POSITION	//Print the position
-				int ch;
-				for(ch = 0; ch < NUM_CHANNELS-1; ch++)
-					printf("q[%d] = %f, ",ch,i2c_in.v[ch]);
-				printf("q[%d] = %f\r\n",ch,i2c_in.v[ch]);
-			#else
-				const char * yn[2] = {"on ","off"};
-				for(int ch = 0; ch < NUM_CHANNELS; ch++)
-					printf("%s: %s ", finger_name[ch], yn[((disabled_stat >> ch) & 1)] );
-				printf("\r\n");			
-			#endif
 		}
 		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
 		print_hr_errcode(rc);
