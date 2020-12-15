@@ -1,5 +1,6 @@
 #include "i2c-master-test.h"
 #include "i2c-err-lookup.h"
+#include "sig-catch.h"
 #include <stdio.h>
 #include <time.h>
 
@@ -14,7 +15,6 @@ typedef struct grip_cmd_t
 	uint8_t grip;
 	uint8_t speed;
 }grip_cmd_t;
-
 
 /*Returns the current time in seconds*/
 float current_time_sec(struct timeval * tv)
@@ -40,7 +40,9 @@ int write_i2c_grip(grip_cmd_t grip)
 void main()
 {
 	open_i2c(0x50);	//Initialize the I2C port. Currently default setting is 100kHz clock rate
-
+	
+	signal_catch_setup();
+	
 	uint8_t i2c_rx_buf[8];	//for reading over i2c
 
 	float tstart = current_time_sec(&tv);	//timestamp to mark program start time
@@ -51,7 +53,7 @@ void main()
 	uint8_t cycle_chk_ready_flag = 0;
 	float program_hung_ts = 20.f;
 	printf("Program begin.\r\n");
-	while(1)
+	while(gl_run_ok)
 	{
 		float t = current_time_sec(&tv)-tstart;
 		int comms_ok = 0;	//0 denotes ok comms
