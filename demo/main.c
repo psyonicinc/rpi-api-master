@@ -56,13 +56,13 @@ void main()
 	while(gl_run_ok)
 	{
 		float t = current_time_sec(&tv)-tstart;
-		int comms_ok = 0;	//0 denotes ok comms
+		int comms_stat = 0;	//0 denotes ok comms
 		
 		/*Read the hand i2c data*/
 		if(read(file_i2c, i2c_rx_buf, 8) == 8)
 		{}
 		else
-			comms_ok |= 1 << 1;
+			comms_stat |= 1 << 1;
 
 		/*Manage what state happens next and when (relative to the execution of the current state switch). 
 		Statements wrapped in these cases get called once*/
@@ -73,7 +73,7 @@ void main()
 				case PROGRAM_START:	//program start has ENDED. transition action to next state...
 				{
 					if(write_i2c_grip((grip_cmd_t){0x1D, 0x00, 0xFA}) != 1)	//transistion to hand_open and send the open signal
-						comms_ok |= 1;
+						comms_stat |= 1;
 					state = HAND_OPEN;
 					next_state_ts = t+=.3f;
 					break;
@@ -81,7 +81,7 @@ void main()
 				case HAND_OPEN:
 				{
 					if(write_i2c_grip((grip_cmd_t){0x1D, 0x01, 0xFA}) != 1)	//transition to hand_power_grasp and close the hand
-						comms_ok |= 1;
+						comms_stat |= 1;
 					state = HAND_POWER_GRASP;
 					next_state_ts = t + 3.f;
 					break;
@@ -89,7 +89,7 @@ void main()
 				case HAND_POWER_GRASP:
 				{		
 					if(write_i2c_grip((grip_cmd_t){0x1D, 0x00, 0xFA}) != 1)	//transition to hand_open and open the hand
-						comms_ok |= 1;
+						comms_stat |= 1;
 					state = HAND_OPEN;
 					cycle_chk_ready_flag = 1;
 					next_state_ts = t + 3.f;
@@ -99,8 +99,8 @@ void main()
 					break;
 			};
 			//statements not wrapped in the switch-case get called every state transition
-			if(comms_ok != 0)
-				print_hr_errcode(comms_ok);
+			if(comms_stat != 0)
+				print_hr_errcode(comms_stat);
 		}
 
 		/*Manage what happens while in the current state
@@ -110,7 +110,8 @@ void main()
 		{
 			case(HAND_OPEN):
 			{
-				if(comms_ok == 0 && i2c_rx_buf[7] == 0x17 && cycle_chk_ready_flag == 1)	//power grasp
+				//if(comms_stat == 0 && i2c_rx_buf[7] == 0x17 && cycle_chk_ready_flag == 1)	//power grasp
+				if(comms_stat == 0 && cycle_chk_ready_flag == 1)
 				{
 					program_hung_ts = t + 20.f;
 					cycle_chk_ready_flag = 0;
