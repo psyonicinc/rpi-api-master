@@ -4,18 +4,13 @@
 #include "m_time.h"
 #include "hand.h"
 
-
-#define PRINT_PRESSURE	/*When enabled, prints the value of the pressure sensors on the index finger. */
-//#define PRINT_POSITION	/*When enabled, prints the finger position in degrees/*
-
-
 const char * finger_name[] = {
-	"index",
-	"middle",
-	"ring",
-	"pinky",
-	"thumb flex",
-	"thumb rot",
+       "index",
+       "middle",
+       "ring",
+       "pinky",
+       "thumb flex",
+       "thumb rot",
 };
 
 /**/
@@ -44,7 +39,6 @@ void main()
 	/*Setup for demo motion*/
 	uint8_t disabled_stat = 0xFF;
 	
-	float qd[NUM_CHANNELS];
 	pres_union_fmt_i2c pres_fmt;
 	float_format_i2c i2c_out;
 	for(int ch = 0; ch < NUM_CHANNELS; ch++)
@@ -105,40 +99,13 @@ void main()
 			}
 			state = next_state;
 		}
-		
-		if(rc == 0)
+		switch(state)
 		{
 			
-			for(int ch = 0; ch < NUM_CHANNELS; ch++)
-			{
-				gl_hand.mp[ch].q = i2c_in.v[ch];
-								
-				smooth_qd(
-					gl_hand.mp[ch].qd_set, 
-					gl_hand.smoothing_time, 
-					gl_hand.smoothing_jump_trigger, 
-					gl_hand.mp[ch].q,
-					(smooth_mem_t *)(&(gl_hand.sm[ch])),
-					(float *)(&(gl_hand.mp[ch].qd))
-				);
-				
-				float tau = gl_hand.mp[ch].k*(gl_hand.mp[ch].qd-gl_hand.mp[ch].q);
-				if(tau > gl_hand.motor_current_limit)
-					tau = gl_hand.motor_current_limit;
-				else if(tau < -gl_hand.motor_current_limit)
-					tau = -gl_hand.motor_current_limit;
-				
-				gl_hand.sp[ch].abs_err_set = abs_f(gl_hand.mp[ch].qd_set - gl_hand.mp[ch].q);
-				if(gl_hand.sp[ch].abs_err_set < gl_hand.sp[ch].setpoint_err_thresh)
-					tau = 0.f;
-
-				i2c_out.v[ch] = tau;
-						
-				//printf("[%.2f]", tau);
-				printf("[%.2f]", gl_hand.sp[ch].abs_err_set);
-			}
-			printf("\r\n");
-		}
+		};
+		
+		if(rc == 0)
+			finger_pctl((hand_t*)&gl_hand, &i2c_in, &i2c_out);
 		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
 		print_hr_errcode(rc);
 	}

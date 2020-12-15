@@ -41,4 +41,6 @@ typedef struct hand_t
 
 extern volatile hand_t gl_hand;
 
+void finger_pctl(hand_t * hand, float_format_i2c * in, float_format_i2c * out);
+
 #endif

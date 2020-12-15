@@ -43,7 +43,7 @@ volatile hand_t gl_hand = {
 };
 
 /*Finger torque based position control with cooling based on abs_err_set*/
-void finger_pctl(hand_t * hand, float_format_i2c * out, float_format_i2c * in)
+void finger_pctl(hand_t * hand, float_format_i2c * in, float_format_i2c * out)
 {
 	for(int ch = 0; ch < NUM_CHANNELS; ch++)
 	{
@@ -54,8 +54,8 @@ void finger_pctl(hand_t * hand, float_format_i2c * out, float_format_i2c * in)
 			hand->smoothing_time, 
 			hand->smoothing_jump_trigger, 
 			hand->mp[ch].q,
-			(smooth_mem_t *)(&(hand->sm[ch])),
-			(float *)(&(hand->mp[ch].qd))
+			&(hand->sm[ch]),
+			&(hand->mp[ch].qd)
 		);
 		
 		float tau = hand->mp[ch].k*(hand->mp[ch].qd-hand->mp[ch].q);
