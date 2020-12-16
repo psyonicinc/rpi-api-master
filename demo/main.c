@@ -36,6 +36,17 @@ void main()
 	m_time_init();
 	signal_catch_setup();
 	
+	
+		
+	FILE * errlog_fp = NULL;
+	FILE * tlog_fp = NULL;
+	errlog_fp = fopen("error_log.txt", "a");
+	tlog_fp = fopen("log.txt", "a");
+	fseek(tlog_fp, 0, SEEK_END);
+	fseek(errlog_fp, 0, SEEK_END);
+	
+	
+	
 	printf("%lld",get_tick());
 	usleep(2000000);
 	/*Setup for demo motion*/
@@ -75,8 +86,7 @@ void main()
 	double next_state_ts = 1.0;
 	double start_ts = current_time_sec();
 	gl_hand.smoothing_time = 8.f;
-	uint8_t thresh_cleared_flag[NUM_CHANNELS] = {0};
-	double last_response_ts = 0.f;
+	uint64_t num_cycles[NUM_CHANNELS] = {0};
 	while(gl_run_ok)
 	{
 		float t = current_time_sec() - start_ts;
@@ -87,27 +97,32 @@ void main()
 			{
 				case OPEN:
 				{
+					uint8_t print_flag = 0;
 					for(int ch = 0; ch < 4; ch++)
 					{
 						gl_hand.mp[ch].qd_set = 90.f;
-						thresh_cleared_flag[ch] = 0;
+						if(gl_hand.mp[ch].q < 20.f)
+						{
+							num_cycles[ch]++;
+							printf("[%s cyc = %d]", finger_name[ch], num_cycles[ch]);
+							fprintf(tlog_fp, "[%s cyc = %d]", finger_name[ch], num_cycles[ch]);
+							print_flag = 1;
+						}
 					}
-					
+					printf("t = %f\r\n", t);
+					fprintf(tlog_fp, "t = %f\r\n", t);
+															
 					next_state = CLOSE;
-					next_state_ts = t + 8.3f;
+					next_state_ts = t + gl_hand.smoothing_time + .3f;
 					break;
 				}
 				case CLOSE:
 				{
 					for(int ch = 0; ch < 4; ch++)
-					{
 						gl_hand.mp[ch].qd_set = 15.f;
-						thresh_cleared_flag[ch] = 0;
-					}
-						
 					
 					next_state = OPEN;
-					next_state_ts = t+8.3f;
+					next_state_ts = t + gl_hand.smoothing_time + .3f;
 					break;
 				}
 				default: 
@@ -119,50 +134,24 @@ void main()
 		{
 			case CLOSE:
 			{
-				int num_closed = 0;
-				for(int ch = 0; ch < 4; ch++)
-				{
-					if(gl_hand.mp[ch].q > 40.f && thresh_cleared_flag[ch] == 0)
-					{
-						num_closed++;
-						thresh_cleared_flag[ch] = 1;
-					}
-				}
-				if(num_closed != 0)
-				{
-					last_response_ts = t;
-					printf("num closed: %d\r\n", num_closed);
-				}
 				break;
 			}
 			case OPEN:
 			{
-				int num_opened = 0;
-				for(int ch = 0; ch < 4; ch++)
-				{
-					if(gl_hand.mp[ch].q < 25.f && thresh_cleared_flag[ch] == 0)
-					{
-						num_opened++;
-						thresh_cleared_flag[ch] = 1;
-					}
-					if(num_opened != 0)
-					{
-						last_response_ts = t;
-						printf("num opened: %d\r\n", num_opened);
-					}
-				}
 				break;
 			}
 			default:
 				break;
 		};
+		
 		//printf("t minus %f\r\n", t - last_response_ts);
-		if(t - last_response_ts > 30.f)
+		if( abs_f(t - next_state_ts) > 30.f)
 		{
 			printf("program unresponsive\r\n");
 		}
 		if(t < 0 || abs_f(t - next_state_ts > 60) )
 		{
+			fprintf(errlog_fp, "FAIL resetting time. bad t = %f\r\n", t);
 			start_ts = current_time_sec();	//failsafe
 		}
 		if(rc == 0)
@@ -170,4 +159,6 @@ void main()
 		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
 		print_hr_errcode(rc);
 	}
+	fclose(errlog_fp);
+	fclose(tlog_fp);
 }

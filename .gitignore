@@ -2,3 +2,4 @@
 *.o
 *.out
 log.txt
+error_log.txt
