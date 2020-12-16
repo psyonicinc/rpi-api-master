@@ -1,14 +1,15 @@
 #include "m_time.h"
+#include <string.h>
 
 /*Setpoint generation start time*/
 struct timeval tv;
+struct timeval start_time;
 
-static volatile int64_t us_offset = 0;
 
 int64_t current_time_us(void)
 {
 	gettimeofday(&tv,NULL);
-	return (tv.tv_sec*1000000+tv.tv_usec) - us_offset;
+	return ( (tv.tv_sec - start_time.tv_sec)*1000000 + (tv.tv_usec - start_time.tv_usec) );
 }
 
 float current_time_sec(void)
@@ -16,13 +17,12 @@ float current_time_sec(void)
 	return ((float)current_time_us())/1000000.0f;
 }
 
-int64_t get_tick()
+uint64_t get_tick()
 {
-	return (current_time_us())/1000;
+	return (uint64_t)(current_time_us())/1000;
 }
 
 void m_time_init(void)
 {
-	//memset(&tv,0,sizeof(struct timeval));
-	//	us_offset = current_time_us();
+	gettimeofday(&start_time, NULL);
 }

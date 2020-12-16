@@ -35,7 +35,9 @@ void main()
 	open_i2c(0x50);	//Initialize the I2C port. Currently default setting is 100kHz clock rate
 	m_time_init();
 	signal_catch_setup();
-		
+	
+	printf("%lld",get_tick());
+	usleep(2000000);
 	/*Setup for demo motion*/
 	uint8_t disabled_stat = 0xFF;
 	
@@ -86,13 +88,13 @@ void main()
 					gl_hand.mp[INDEX].qd_set = 50.f;
 					
 					next_state = CLOSE;
-					next_state_ts = t + 1.5f;
+					next_state_ts = t + 3.f;
 					break;
 				case CLOSE:
 					gl_hand.mp[INDEX].qd_set = 15.f;
 					
 					next_state = OPEN;
-					next_state_ts = t+1.5f;
+					next_state_ts = t+3.0f;
 					break;
 				default: 
 					break;
