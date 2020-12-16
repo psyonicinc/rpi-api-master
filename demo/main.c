@@ -2,7 +2,7 @@
 #include "i2c-err-lookup.h"
 #include "sig-catch.h"
 #include <stdio.h>
-#include <time.h>
+#include "m_time.h"
 
 static struct timeval tv;
 
@@ -16,13 +16,6 @@ typedef struct grip_cmd_t
 	uint8_t speed;
 }grip_cmd_t;
 
-/*Returns the current time in seconds*/
-float current_time_sec(struct timeval * tv)
-{
-	gettimeofday(tv,NULL);
-	int64_t t_int = (tv->tv_sec*1000000+tv->tv_usec);
-	return ((float)t_int)/1000000.0f;
-}
 
 /*Write a grip command struct over i2c (3 bytes)*/
 int write_i2c_grip(grip_cmd_t grip)
@@ -40,22 +33,32 @@ int write_i2c_grip(grip_cmd_t grip)
 void main()
 {
 	open_i2c(0x50);	//Initialize the I2C port. Currently default setting is 100kHz clock rate
-	
+	m_time_init();
 	signal_catch_setup();
+	
+	FILE * tlog_fp = NULL;
+	tlog_fp = fopen("log.txt", "a");
+	fseek(tlog_fp, 0, SEEK_END);
 	
 	uint8_t i2c_rx_buf[8];	//for reading over i2c
 
-	float tstart = current_time_sec(&tv);	//timestamp to mark program start time
+	
 	float next_state_ts = 1.f;	//used to schedule the next state transition
 	int state = PROGRAM_START;	//current state. 
 	
 	uint64_t cycle_count = 0;
 	uint8_t cycle_chk_ready_flag = 0;
 	float program_hung_ts = 20.f;
+	
 	printf("Program begin.\r\n");
+	fprintf(tlog_fp, "Program begin.\r\n");
+	float tstart = current_time_sec();	//timestamp to mark program start time
+	printf("start time: %f\r\n", tstart);
+	fprintf(tlog_fp, "start time: %f\r\n", tstart);
+	
 	while(gl_run_ok)
 	{
-		float t = current_time_sec(&tv)-tstart;
+		float t = current_time_sec()-tstart;
 		int comms_stat = 0;	//0 denotes ok comms
 		
 		/*Read the hand i2c data*/
@@ -72,7 +75,7 @@ void main()
 			{
 				case PROGRAM_START:	//program start has ENDED. transition action to next state...
 				{
-					if(write_i2c_grip((grip_cmd_t){0x1D, 0x00, 0xFA}) != 1)	//transistion to hand_open and send the open signal
+					if(write_i2c_grip((grip_cmd_t){0x1D, 0x00, 0xEF}) != 1)	//transistion to hand_open and send the open signal
 						comms_stat |= 1;
 					state = HAND_OPEN;
 					next_state_ts = t+=.3f;
@@ -80,7 +83,18 @@ void main()
 				}
 				case HAND_OPEN:
 				{
-					if(write_i2c_grip((grip_cmd_t){0x1D, 0x01, 0xFA}) != 1)	//transition to hand_power_grasp and close the hand
+					if(i2c_rx_buf[7] == 0x17)
+					{
+						fprintf(tlog_fp, ", hand opened OK\r\n");
+						printf(", hand opened OK\r\n");
+					}
+					else
+					{
+						fprintf(tlog_fp, ", bad open\r\n");
+						printf(", bad open\r\n");
+					}
+					fclose(tlog_fp);
+					if(write_i2c_grip((grip_cmd_t){0x1D, 0x01, 0xEF}) != 1)	//transition to hand_power_grasp and close the hand
 						comms_stat |= 1;
 					state = HAND_POWER_GRASP;
 					next_state_ts = t + 3.f;
@@ -88,7 +102,10 @@ void main()
 				}
 				case HAND_POWER_GRASP:
 				{		
-					if(write_i2c_grip((grip_cmd_t){0x1D, 0x00, 0xFA}) != 1)	//transition to hand_open and open the hand
+					tlog_fp = fopen("log.txt", "a");
+					fseek(tlog_fp, 0, SEEK_END);
+					
+					if(write_i2c_grip((grip_cmd_t){0x1D, 0x00, 0xEF}) != 1)	//transition to hand_open and open the hand
 						comms_stat |= 1;
 					state = HAND_OPEN;
 					cycle_chk_ready_flag = 1;
@@ -116,7 +133,8 @@ void main()
 					program_hung_ts = t + 20.f;
 					cycle_chk_ready_flag = 0;
 					cycle_count++;
-					printf("count = %llu, time = %f\r\n", cycle_count, t);
+					printf("count = %llu, time = %f", cycle_count, t);
+					fprintf(tlog_fp, "count = %llu, time = %f", cycle_count, t);
 				}
 				break;
 			}
@@ -130,4 +148,5 @@ void main()
 		}
 	}
 	printf("exiting program\r\n");
+	fclose(tlog_fp);
 }
