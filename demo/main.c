@@ -74,8 +74,8 @@ void main()
 	int state = 0;
 	float next_state_ts = 1.f;
 	float start_ts = current_time_sec();
-	gl_hand.smoothing_time = 1.f;
-	
+	gl_hand.smoothing_time = 8.f;
+	uint8_t thresh_cleared_flag[NUM_CHANNELS] = {0};
 	while(gl_run_ok)
 	{
 		float t = current_time_sec() - start_ts;
@@ -85,17 +85,30 @@ void main()
 			switch(state)
 			{
 				case OPEN:
-					gl_hand.mp[INDEX].qd_set = 50.f;
+				{
+					for(int ch = 0; ch < 4; ch++)
+					{
+						gl_hand.mp[ch].qd_set = 50.f;
+						thresh_cleared_flag[ch] = 0;
+					}
 					
 					next_state = CLOSE;
-					next_state_ts = t + 3.f;
+					next_state_ts = t + 8.3f;
 					break;
+				}
 				case CLOSE:
-					gl_hand.mp[INDEX].qd_set = 15.f;
+				{
+					for(int ch = 0; ch < 4; ch++)
+					{
+						gl_hand.mp[ch].qd_set = 15.f;
+						thresh_cleared_flag[ch] = 0;
+					}
+						
 					
 					next_state = OPEN;
-					next_state_ts = t+3.0f;
+					next_state_ts = t+8.3f;
 					break;
+				}
 				default: 
 					break;
 			}
@@ -103,7 +116,39 @@ void main()
 		}
 		switch(state)
 		{
-			
+			case CLOSE:
+			{
+				uint8_t line_printed = 0;
+				for(int ch = 0; ch < 4; ch++)
+				{
+					if(gl_hand.mp[ch].q > 45.f && thresh_cleared_flag[ch] == 0)
+					{
+						printf("[%s close ok]", finger_name[ch]);
+						thresh_cleared_flag[ch] = 1;
+						line_printed = 1;
+					}
+				}
+				if(line_printed)
+					printf("\r\n");
+				break;
+			}
+			case OPEN:
+			{
+				uint8_t line_printed = 0;
+				for(int ch = 0; ch < 4; ch++)
+				{
+					if(gl_hand.mp[ch].q < 20.f && thresh_cleared_flag[ch] == 0)
+					{
+						printf("[%s open ok]", finger_name[ch]);
+						thresh_cleared_flag[ch] = 1;
+					}
+					if(line_printed)
+						printf("\r\n");
+				}
+				break;
+			}
+			default:
+				break;
 		};
 		
 		if(rc == 0)
