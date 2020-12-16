@@ -6,8 +6,8 @@
 #include <sys/time.h>
 
 
-int64_t current_time_us(void);
-float current_time_sec(void);
+uint64_t current_time_us(void);
+double current_time_sec(void);
 uint64_t get_tick(void);
 void m_time_init(void);
 

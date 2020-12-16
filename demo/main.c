@@ -72,10 +72,11 @@ void main()
 	enum {OPEN, CLOSE};
 	
 	int state = 0;
-	float next_state_ts = 1.f;
-	float start_ts = current_time_sec();
+	double next_state_ts = 1.0;
+	double start_ts = current_time_sec();
 	gl_hand.smoothing_time = 8.f;
 	uint8_t thresh_cleared_flag[NUM_CHANNELS] = {0};
+	double last_response_ts = 0.f;
 	while(gl_run_ok)
 	{
 		float t = current_time_sec() - start_ts;
@@ -121,7 +122,7 @@ void main()
 				uint8_t line_printed = 0;
 				for(int ch = 0; ch < 4; ch++)
 				{
-					if(gl_hand.mp[ch].q > 45.f && thresh_cleared_flag[ch] == 0)
+					if(gl_hand.mp[ch].q > 40.f && thresh_cleared_flag[ch] == 0)
 					{
 						printf("[%s close ok]", finger_name[ch]);
 						thresh_cleared_flag[ch] = 1;
@@ -129,7 +130,10 @@ void main()
 					}
 				}
 				if(line_printed)
+				{
+					last_response_ts = t;
 					printf("\r\n");
+				}
 				break;
 			}
 			case OPEN:
@@ -137,19 +141,28 @@ void main()
 				uint8_t line_printed = 0;
 				for(int ch = 0; ch < 4; ch++)
 				{
-					if(gl_hand.mp[ch].q < 20.f && thresh_cleared_flag[ch] == 0)
+					if(gl_hand.mp[ch].q < 25.f && thresh_cleared_flag[ch] == 0)
 					{
 						printf("[%s open ok]", finger_name[ch]);
 						thresh_cleared_flag[ch] = 1;
 					}
 					if(line_printed)
+					{
+						last_response_ts = t;
 						printf("\r\n");
+					}
 				}
 				break;
 			}
 			default:
 				break;
 		};
+		//printf("t minus %f\r\n", t - last_response_ts);
+		printf("time: %f\r\n", t);
+		if(t - last_response_ts > 30.f)
+		{
+			printf("program unresponsive\r\n");
+		}
 		
 		if(rc == 0)
 			finger_pctl((hand_t*)&gl_hand, &i2c_in, &i2c_out);
