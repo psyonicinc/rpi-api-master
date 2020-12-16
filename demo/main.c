@@ -89,7 +89,7 @@ void main()
 				{
 					for(int ch = 0; ch < 4; ch++)
 					{
-						gl_hand.mp[ch].qd_set = 50.f;
+						gl_hand.mp[ch].qd_set = 90.f;
 						thresh_cleared_flag[ch] = 0;
 					}
 					
@@ -119,37 +119,36 @@ void main()
 		{
 			case CLOSE:
 			{
-				uint8_t line_printed = 0;
+				int num_closed = 0;
 				for(int ch = 0; ch < 4; ch++)
 				{
 					if(gl_hand.mp[ch].q > 40.f && thresh_cleared_flag[ch] == 0)
 					{
-						printf("[%s close ok]", finger_name[ch]);
+						num_closed++;
 						thresh_cleared_flag[ch] = 1;
-						line_printed = 1;
 					}
 				}
-				if(line_printed)
+				if(num_closed != 0)
 				{
 					last_response_ts = t;
-					printf("\r\n");
+					printf("num closed: %d\r\n", num_closed);
 				}
 				break;
 			}
 			case OPEN:
 			{
-				uint8_t line_printed = 0;
+				int num_opened = 0;
 				for(int ch = 0; ch < 4; ch++)
 				{
 					if(gl_hand.mp[ch].q < 25.f && thresh_cleared_flag[ch] == 0)
 					{
-						printf("[%s open ok]", finger_name[ch]);
+						num_opened++;
 						thresh_cleared_flag[ch] = 1;
 					}
-					if(line_printed)
+					if(num_opened != 0)
 					{
 						last_response_ts = t;
-						printf("\r\n");
+						printf("num opened: %d\r\n", num_opened);
 					}
 				}
 				break;
@@ -158,12 +157,14 @@ void main()
 				break;
 		};
 		//printf("t minus %f\r\n", t - last_response_ts);
-		printf("time: %f\r\n", t);
 		if(t - last_response_ts > 30.f)
 		{
 			printf("program unresponsive\r\n");
 		}
-		
+		if(t < 0 || abs_f(t - next_state_ts > 60) )
+		{
+			start_ts = current_time_sec();	//failsafe
+		}
 		if(rc == 0)
 			finger_pctl((hand_t*)&gl_hand, &i2c_in, &i2c_out);
 		rc = send_recieve_floats(TORQUE_CTL_MODE, &i2c_out, &i2c_in, &disabled_stat, &pres_fmt);
