@@ -17,7 +17,7 @@ void main()
 		{
 			printf("d = ");
 			for(int i =0; i < 8; i++)
-				printf("[%d]", i2c_rx_buf[i]);
+				printf("[%.2X]", i2c_rx_buf[i]);
 			printf("\r\n");
 		}
 		else
