@@ -1,16 +1,17 @@
 #include "i2c-master-test.h"
 #include "i2c-err-lookup.h"
+#include "m_time.h"
 
 //#define PRINT_PRESSURE	/*When enabled, prints the value of the pressure sensors on the index finger. */
 #define CABLE_TEST
 //#define PRINT_POSITION	/*When enabled, prints the finger position in degrees/*
 
-float current_time_sec(struct timeval * tv)
-{
-	gettimeofday(tv,NULL);
-	int64_t t_int = (tv->tv_sec*1000000+tv->tv_usec);
-	return ((float)t_int)/1000000.0f;
-}
+// float current_time_sec(struct timeval * tv)
+// {
+	// gettimeofday(tv,NULL);
+	// int64_t t_int = (tv->tv_sec*1000000+tv->tv_usec);
+	// return ((float)t_int)/1000000.0f;
+// }
 
 const char * finger_name[] = {
 	"index",
@@ -115,13 +116,13 @@ void main()
 	wait_for_cooldown(&disabled_stat, &i2c_out, &i2c_in, &pres_fmt);
 	printf("ready\r\n");
 
-	float start_ts = current_time_sec(&tv);
+	float start_ts = current_time_sec();
 	float tau_thresh[NUM_CHANNELS] = {0};
 	while(1)
 	{
 		if(rc == 0)
 		{
-			float t = current_time_sec(&tv)-start_ts;
+			float t = current_time_sec()-start_ts;
 			for(int ch = 0; ch < NUM_CHANNELS; ch++)
 			{
 				float qd = 105.f*(.5f*sin(2.f*t+(float)(5-ch)*3.1415f/6)+.5f) + 5.f;
